@@ -1,100 +1,89 @@
 ##################################################
-# Module D - News Fetcher (simple version)
-# Python version: 3.13.2
+# Module D - News Fetcher (Finnhub)
 # Author: Yanick Meier
+# Python version: 3.13.2
+#
 # Description:
-# Gets news about a stock ticker using yfinance
-# and returns them in a simple standard format.
+# Fetches company news from Finnhub for a ticker and a date range.
+# Returns a list of dictionaries with:
+# title, publisher, summary, link, published
 #
-# Notes:
-# - The function checks that start_date and end_date have the correct format.
-# - The function fetches the latest news items from yfinance.
-# - The function builds a clean list of article dictionaries.
-#
-# Important:
-# yfinance news items in this environment only contain "id" and "content".
-# This means:
-# - We cannot filter by date.
-# - We cannot use real titles or publishers.
-# - We use simple placeholder values instead.
+# Requirements:
+# - pip install requests
+# - FINNHUB_API_KEY must be set as environment variable
 ##################################################
 
-import yfinance as yf
+import os
+import requests
 from datetime import datetime
 
 
 def fetch_news(ticker, start_date, end_date, max_items=50):
 
-    print("Starting news fetch process")
+    print("Starting Finnhub news fetch process")
 
-    # Check date format (just to validate input)
+    # Check date format
     try:
-        print("Checking date strings format")
         datetime.strptime(start_date, "%Y-%m-%d")
         datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
         print("Error - invalid date format, please use YYYY-MM-DD")
         return []
 
-    # Load ticker object
-    print(f"Loading ticker object for: {ticker}")
-    stock = yf.Ticker(ticker)
+    # Read API key from environment
+    api_key = os.getenv("FINNHUB_API_KEY")
+    if not api_key:
+        print("Error - FINNHUB_API_KEY not set")
+        return []
 
-    # Fetch raw news
-    print("Fetching raw news list")
-    raw_news = stock.news or []
+    # Build request
+    url = "https://finnhub.io/api/v1/company-news"
+    params = {
+        "symbol": ticker,
+        "from": start_date,
+        "to": end_date,
+        "token": api_key
+    }
 
-    print(f"Found {len(raw_news)} raw news items")
+    # Call API
+    try:
+        response = requests.get(url, params=params, timeout=10)
+    except Exception as e:
+        print("Error - request failed:", e)
+        return []
 
-    if len(raw_news) > 0:
-        print("Example raw news keys:", list(raw_news[0].keys()))
+    # Check status code
+    if response.status_code != 200:
+        print("Error - API returned status:", response.status_code)
+        return []
+
+    # Parse JSON
+    raw_news = response.json() or []
+    print("Found", len(raw_news), "raw news items")
 
     articles = []
 
-    # Take latest news (we cannot filter by date)
+    # Convert and keep only max_items
     for item in raw_news[:max_items]:
 
-        # Get the nested content dict if available
-        content_raw = item.get("content", {})
-
-        # If content is a dict, we can read fields like "title"
-        if isinstance(content_raw, dict):
-            title = content_raw.get("title") or "No title available"
-            summary = (
-                content_raw.get("summary")
-                or content_raw.get("body")
-                or "No summary available"
-            )
+        # Finnhub returns datetime as Unix timestamp in seconds
+        ts = item.get("datetime")
+        if ts:
+            published_str = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
         else:
-            # Fallback: treat content as plain text
-            content_text = str(content_raw)
-            title = content_text[:80] + "..." if content_text else "No title available"
-            summary = content_text or "No summary available"
+            published_str = "Unknown date"
 
-        # Default publisher
-        publisher = "Yahoo Finance"
-
-        # Build link using ID if possible
-        if "id" in item:
-            link = f"https://finance.yahoo.com/news/{item['id']}"
-        else:
-            link = "No link available"
-
-        # No publish date in yfinance output
-        published_str = "Unknown date"
-
-        # Final article dictionary
         article = {
-            "title": title,
-            "publisher": publisher,
-            "summary": summary,
-            "link": link,
+            "title": item.get("headline") or "No title available",
+            "publisher": item.get("source") or "Unknown publisher",
+            "summary": item.get("summary") or "No summary available",
+            "link": item.get("url") or "No link available",
             "published": published_str
         }
 
         articles.append(article)
 
-    print(f"News fetch process finished, returning {len(articles)} items")
+    print("Finnhub finished, returning", len(articles), "items")
     return articles
 
 
@@ -104,7 +93,7 @@ def fetch_news(ticker, start_date, end_date, max_items=50):
 
 if __name__ == "__main__":
 
-    print("Running simple test for Module D")
+    print("Running simple test for Module D with Finnhub")
 
     test_ticker = "AAPL"
     test_start = "2023-01-01"
